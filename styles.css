@@ -1,10 +1,10 @@
 /* Galaxie 3D */
 .galaxie-root {
   position: relative;
-  padding: 0 !important;
   overflow: hidden;
   background: radial-gradient(ellipse at 50% 40%, #0d1030 0%, #05060d 70%);
 }
+.workspace-leaf-content .view-content.galaxie-root { padding: 0; }
 .galaxie-stage { position: absolute; inset: 0; cursor: grab; }
 
 .galaxie-hud {
@@ -27,33 +27,34 @@
   pointer-events: none;
 }
 .galaxie-top > * { pointer-events: auto; }
-.galaxie-search {
+.galaxie-root input.galaxie-search {
   width: 260px;
-  background: rgba(10, 12, 28, 0.65) !important;
-  border: 1px solid rgba(140, 160, 255, 0.25) !important;
-  border-radius: 999px !important;
-  color: #fff !important;
-  padding: 6px 14px !important;
+  background: rgba(10, 12, 28, 0.65);
+  border: 1px solid rgba(140, 160, 255, 0.25);
+  border-radius: 999px;
+  color: #fff;
+  padding: 6px 14px;
   backdrop-filter: blur(10px);
 }
-.galaxie-search:focus { box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.5) !important; }
+.galaxie-root input.galaxie-search:focus,
+.galaxie-root input.galaxie-search:focus-visible { box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.5); }
 .galaxie-buttons { margin-left: auto; display: flex; gap: 6px; }
-.galaxie-btn {
-  background: rgba(10, 12, 28, 0.65) !important;
-  border: 1px solid rgba(140, 160, 255, 0.25) !important;
-  color: #cfd4ff !important;
-  border-radius: 999px !important;
+.galaxie-root button.galaxie-btn {
+  background: rgba(10, 12, 28, 0.65);
+  border: 1px solid rgba(140, 160, 255, 0.25);
+  color: #cfd4ff;
+  border-radius: 999px;
   min-width: 34px; height: 30px;
   font-size: 14px;
   cursor: pointer;
-  box-shadow: none !important;
+  box-shadow: none;
   transition: all 0.15s ease;
 }
-.galaxie-btn:hover { color: #fff !important; border-color: rgba(76, 201, 240, 0.7) !important; }
-.galaxie-btn.is-on {
-  color: #05060d !important;
-  background: linear-gradient(135deg, #4cc9f0, #9d4edd) !important;
-  border-color: transparent !important;
+.galaxie-root button.galaxie-btn:hover { color: #fff; border-color: rgba(76, 201, 240, 0.7); }
+.galaxie-root button.galaxie-btn.is-on {
+  color: #05060d;
+  background: linear-gradient(135deg, #4cc9f0, #9d4edd);
+  border-color: transparent;
 }
 
 .galaxie-legend {
@@ -83,7 +84,7 @@
 }
 .galaxie-info-title { font-weight: 600; font-size: 13px; color: #fff; }
 .galaxie-info-sub { color: #9aa1cf; margin-top: 2px; }
-.galaxie-open { margin-top: 8px; padding: 0 12px; font-size: 12px !important; }
+.galaxie-root button.galaxie-open { margin-top: 8px; padding: 0 12px; font-size: 12px; }
 
 .galaxie-help {
   left: 50%; bottom: 10px; transform: translateX(-50%);
@@ -93,7 +94,7 @@
   white-space: nowrap;
 }
 
-/* infobulle de survol (générée par 3d-force-graph) */
+/* hover tooltip (3d-force-graph renders it as .float-tooltip-kap) */
 .galaxie-tip {
   display: flex; flex-direction: column; gap: 2px;
   padding: 6px 10px;
@@ -104,4 +105,4 @@
 }
 .galaxie-tip b { color: #fff; }
 .galaxie-tip span { color: #9aa1cf; }
-.galaxie-root .scene-tooltip { background: transparent !important; padding: 0 !important; }
+.galaxie-root .float-tooltip-kap { background: transparent; padding: 0; }
