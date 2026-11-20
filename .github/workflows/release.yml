@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  push:
+    tags: ['*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: node build.mjs
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/main.js manifest.json styles.css --title "${{ github.ref_name }}" --notes "Release ${{ github.ref_name }}. Install from Obsidian's community plugins, or copy main.js, manifest.json and styles.css into .obsidian/plugins/galaxie-3d/."
