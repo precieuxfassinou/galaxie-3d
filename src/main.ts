@@ -1,4 +1,4 @@
-import { App, ItemView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment } from 'obsidian';
+import { App, ItemView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment, type SettingDefinitionItem } from 'obsidian';
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph';
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -762,6 +762,31 @@ export default class GalaxiePlugin extends Plugin {
 
 class GalaxieSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: GalaxiePlugin) { super(app, plugin); }
+
+  // Declarative settings (Obsidian 1.13+: searchable). display() below stays for older versions.
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      { name: T.language, desc: T.languageDesc, control: { type: 'dropdown', key: 'language', options: { auto: T.auto, fr: 'Français', en: 'English' } } },
+      { name: T.bloom, desc: T.bloomDesc, control: { type: 'slider', key: 'bloom', min: 0, max: 1.5, step: 0.05 } },
+      { name: T.showTags, control: { type: 'toggle', key: 'showTags' } },
+      { name: T.orphans, control: { type: 'toggle', key: 'showOrphans' } },
+      { name: T.particles, desc: T.particlesDesc, control: { type: 'toggle', key: 'particles' } },
+      { name: T.labels, desc: T.labelsDesc, control: { type: 'slider', key: 'hubLabels', min: 0, max: 60, step: 1 } },
+    ];
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const s = this.plugin.settings;
+    switch (key) {
+      case 'language': if (value === 'auto' || value === 'fr' || value === 'en') s.language = value; break;
+      case 'bloom': case 'hubLabels': if (typeof value === 'number' && Number.isFinite(value)) s[key] = value; break;
+      case 'showTags': case 'showOrphans': case 'particles': s[key] = value === true; break;
+      default: return;
+    }
+    await this.plugin.saveSettings();
+    const rebuild = key === 'showTags' || key === 'showOrphans' || key === 'hubLabels';
+    for (const v of this.plugin.views()) { if (rebuild) v.refresh(); else v.applyBloom(); }
+  }
 
   display() {
     const { containerEl } = this;
