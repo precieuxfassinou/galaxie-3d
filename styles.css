@@ -1,0 +1,107 @@
+/* Galaxie 3D */
+.galaxie-root {
+  position: relative;
+  padding: 0 !important;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #0d1030 0%, #05060d 70%);
+}
+.galaxie-stage { position: absolute; inset: 0; cursor: grab; }
+
+.galaxie-hud {
+  position: absolute;
+  z-index: 5;
+  color: #e6e8f2;
+  font-size: 12px;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 12, 28, 0.55);
+  border: 1px solid rgba(140, 160, 255, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.galaxie-top {
+  top: 12px; left: 12px; right: 12px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  background: transparent; border: none; box-shadow: none; backdrop-filter: none;
+  pointer-events: none;
+}
+.galaxie-top > * { pointer-events: auto; }
+.galaxie-search {
+  width: 260px;
+  background: rgba(10, 12, 28, 0.65) !important;
+  border: 1px solid rgba(140, 160, 255, 0.25) !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  padding: 6px 14px !important;
+  backdrop-filter: blur(10px);
+}
+.galaxie-search:focus { box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.5) !important; }
+.galaxie-buttons { margin-left: auto; display: flex; gap: 6px; }
+.galaxie-btn {
+  background: rgba(10, 12, 28, 0.65) !important;
+  border: 1px solid rgba(140, 160, 255, 0.25) !important;
+  color: #cfd4ff !important;
+  border-radius: 999px !important;
+  min-width: 34px; height: 30px;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: all 0.15s ease;
+}
+.galaxie-btn:hover { color: #fff !important; border-color: rgba(76, 201, 240, 0.7) !important; }
+.galaxie-btn.is-on {
+  color: #05060d !important;
+  background: linear-gradient(135deg, #4cc9f0, #9d4edd) !important;
+  border-color: transparent !important;
+}
+
+.galaxie-legend {
+  left: 12px; bottom: 42px;
+  padding: 8px 6px;
+  max-height: 55%;
+  overflow-y: auto;
+  min-width: 190px;
+}
+.galaxie-legend-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.galaxie-legend-row:hover { background: rgba(255, 255, 255, 0.06); }
+.galaxie-legend-row.is-off { opacity: 0.35; }
+.galaxie-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.galaxie-legend-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.galaxie-legend-count { color: #8f96c4; font-variant-numeric: tabular-nums; }
+
+.galaxie-info {
+  right: 12px; bottom: 42px;
+  padding: 10px 14px;
+  max-width: 300px;
+}
+.galaxie-info-title { font-weight: 600; font-size: 13px; color: #fff; }
+.galaxie-info-sub { color: #9aa1cf; margin-top: 2px; }
+.galaxie-open { margin-top: 8px; padding: 0 12px; font-size: 12px !important; }
+
+.galaxie-help {
+  left: 50%; bottom: 10px; transform: translateX(-50%);
+  padding: 4px 12px;
+  color: #8f96c4;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* infobulle de survol (générée par 3d-force-graph) */
+.galaxie-tip {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 10px;
+  background: rgba(10, 12, 28, 0.85);
+  border: 1px solid rgba(140, 160, 255, 0.3);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.galaxie-tip b { color: #fff; }
+.galaxie-tip span { color: #9aa1cf; }
+.galaxie-root .scene-tooltip { background: transparent !important; padding: 0 !important; }
