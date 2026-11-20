@@ -2,6 +2,8 @@
 
 A colorful 3D view of your Obsidian vault.
 
+![Galaxie 3D in a demo vault](docs/screenshot.png)
+
 - **One color per top-level folder**, so the shape of your vault reads at a glance.
 - Node size grows with the number of links; the most linked notes keep their name visible.
 - Soft glow, fixed-size starfield, particles flowing along the links of the selected note.
