@@ -1,4 +1,4 @@
-import { App, ItemView, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, debounce, getAllTags } from 'obsidian';
+import { App, ItemView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment } from 'obsidian';
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph';
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -9,7 +9,8 @@ import SpriteText from 'three-spritetext';
 function pickLang(setting?: string): boolean {
   if (setting === 'fr') return true;
   if (setting === 'en') return false;
-  return (window.localStorage.getItem('language') || navigator.language || 'en').toLowerCase().startsWith('fr');
+  // Obsidian règle la langue de moment sur celle de son interface
+  return (moment.locale() || 'en').toLowerCase().startsWith('fr');
 }
 let FR = pickLang();
 const TFR = {
@@ -61,10 +62,14 @@ const ROOT_COLOR = '#E0E1DD';
 
 /* ---------------------------------------------------------------- graphe */
 
+/** Contrôles « orbit » de three.js, dans la partie qu'on utilise. */
+interface Orbit { autoRotate: boolean; autoRotateSpeed: number; addEventListener?(type: string, fn: () => void): void }
+
 interface GNode {
   id: string; name: string; kind: 'note' | 'tag'; group: string; deg: number;
   x?: number; y?: number; z?: number;
   __mat?: THREE.MeshBasicMaterial; __halo?: THREE.SpriteMaterial; __label?: SpriteText;
+  __hub?: boolean; __baseOpacity?: number; __baseHalo?: number;
 }
 interface GLink { source: string | GNode; target: string | GNode; group: string }
 
@@ -114,7 +119,7 @@ function colorMap(nodes: GNode[]): Map<string, string> {
   const groups = [...new Set(nodes.filter(n => n.kind === 'note').map(n => n.group))].sort((a, b) => a.localeCompare(b));
   const m = new Map<string, string>();
   let i = 0;
-  for (const g of groups) m.set(g, g === '/' ? ROOT_COLOR : PALETTE[i++ % PALETTE.length]!);
+  for (const g of groups) m.set(g, g === '/' ? ROOT_COLOR : PALETTE[i++ % PALETTE.length]);
   m.set('#tags', TAG_COLOR);
   return m;
 }
@@ -186,8 +191,8 @@ class GalaxieView extends ItemView {
       .d3AlphaDecay(0.035)                 // la mise en place se stabilise plus vite
       .onEngineTick(() => this.linkLayer?.syncPositions());
 
-    (g.d3Force('charge') as any)?.strength((n: GNode) => (n.kind === 'tag' ? -20 : -180));
-    (g.d3Force('link') as any)?.distance((l: GLink) => (l.group === '#tags' ? 18 : 80));
+    (g.d3Force('charge') as unknown as { strength?(f: (n: GNode) => number): void } | undefined)?.strength?.((n: GNode) => (n.kind === 'tag' ? -20 : -180));
+    (g.d3Force('link') as unknown as { distance?(f: (l: GLink) => number): void } | undefined)?.distance?.((l: GLink) => (l.group === '#tags' ? 18 : 80));
 
     // Fond opaque (sinon le thème d'Obsidian transparaît) + étoiles
     g.scene().background = new THREE.Color('#05060d');
@@ -205,13 +210,13 @@ class GalaxieView extends ItemView {
     g.postProcessingComposer().addPass(new OutputPass());   // conversion en sRGB : couleurs justes et vives
     // Anticrénelage (MSAA) sur les tampons du rendu avec halo : sans lui, les bords des sphères
     // et des étoiles « clignotent » d'un pixel à l'autre pendant la rotation.
-    const comp = g.postProcessingComposer() as any;
+    const comp = g.postProcessingComposer() as unknown as { renderTarget1?: { samples: number; dispose(): void }; renderTarget2?: { samples: number; dispose(): void } };
     for (const rt of [comp.renderTarget1, comp.renderTarget2]) {
       if (rt) { rt.samples = 4; rt.dispose(); }
     }
 
     // Rotation automatique qui s'arrête dès qu'on touche la vue
-    const controls = g.controls() as any;
+    const controls = g.controls() as unknown as Orbit;
     controls.autoRotate = this.plugin.settings.autoRotate;
     controls.autoRotateSpeed = 0.35;
     controls.addEventListener?.('start', () => { controls.autoRotate = false; });
@@ -281,8 +286,8 @@ class GalaxieView extends ItemView {
     // Les notes les plus reliées gardent leur nom affiché
     const hubs = new Set([...next.nodes].filter(n => n.kind === 'note').sort((a, b) => b.deg - a.deg)
       .slice(0, this.plugin.settings.hubLabels).map(n => n.id));
-    for (const n of next.nodes) (n as any).__hub = hubs.has(n.id);
-    this.graph.graphData(next as any);
+    for (const n of next.nodes) n.__hub = hubs.has(n.id);
+    this.graph.graphData(next);
     this.linkLayer?.setLinks(this.visibleLinks(), (l) => this.colors.get(l.group) ?? '#8888aa');
     this.paint();
     this.renderLegend();
@@ -301,7 +306,7 @@ class GalaxieView extends ItemView {
     const r = this.radius(n);
 
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: n.kind === 'tag' ? 0.85 : 0.95 });
-    (n as any).__baseOpacity = n.kind === 'tag' ? 0.85 : 0.95;
+    n.__baseOpacity = n.kind === 'tag' ? 0.85 : 0.95;
     // Géométrie partagée par toutes les notes, mise à l'échelle : 1 géométrie au lieu de 800
     const mesh = new THREE.Mesh(n.kind === 'tag' ? OCTA : SPHERE, mat);
     mesh.scale.setScalar(r);
@@ -316,20 +321,20 @@ class GalaxieView extends ItemView {
       const sprite = new THREE.Sprite(halo);
       sprite.raycast = () => {};            // le halo ne capte pas la souris : seule la sphère est cliquable
       sprite.scale.setScalar(r * 2.2);
-      (n as any).__baseHalo = baseHalo;
+      n.__baseHalo = baseHalo;
       group.add(sprite);
       n.__halo = halo;
     }
 
-    if ((n as any).__hub) {
+    if (n.__hub) {
       const label = new SpriteText(n.name, 6, '#c9cdf0');
       label.fontFace = 'Inter, Segoe UI, sans-serif';
       label.fontWeight = '600';
       label.backgroundColor = 'rgba(5,6,13,0.55)';
       label.padding = 1.5;
       label.borderRadius = 2;
-      (label.material as THREE.SpriteMaterial).depthWrite = false;
-      (label.material as THREE.SpriteMaterial).opacity = 0.8;
+      (label.material).depthWrite = false;
+      (label.material).opacity = 0.8;
       label.raycast = () => {};
       label.position.set(0, r + 5, 0);
       group.add(label);
@@ -368,9 +373,9 @@ class GalaxieView extends ItemView {
       if (!n.__mat) continue;
       const on = !focus || focus.has(n.id);
       const isFocus = !!focus && (this.hovered?.id === n.id || this.selected?.id === n.id);
-      n.__mat.opacity = on ? (focus ? 0.85 : (n as any).__baseOpacity) : 0.08;
-      if (n.__halo) n.__halo.opacity = on ? (isFocus ? 0.13 : focus ? 0.08 : (n as any).__baseHalo) : 0.01;
-      if (n.__label) (n.__label.material as THREE.SpriteMaterial).opacity = on ? 0.8 : 0.1;
+      n.__mat.opacity = on ? (focus ? 0.85 : n.__baseOpacity ?? 0.95) : 0.08;
+      if (n.__halo) n.__halo.opacity = on ? (isFocus ? 0.13 : focus ? 0.08 : n.__baseHalo ?? 0.09) : 0.01;
+      if (n.__label) (n.__label.material).opacity = on ? 0.8 : 0.1;
     }
     // Plus aucune reconstruction d'objets au survol : on ne change que des couleurs dans un tampon
     const f = this.hovered ?? this.selected;
@@ -438,10 +443,10 @@ class GalaxieView extends ItemView {
   private flyTo(n: GNode) {
     if (!this.graph || n.x === undefined) return;
     const dist = 110 + this.radius(n) * 12;
-    const ratio = 1 + dist / Math.max(1, Math.hypot(n.x!, n.y!, n.z!));
-    (this.graph.controls() as any).autoRotate = false;
+    const ratio = 1 + dist / Math.max(1, Math.hypot(n.x, n.y!, n.z!));
+    (this.graph.controls() as unknown as Orbit).autoRotate = false;
     this.syncButtons();
-    this.graph.cameraPosition({ x: n.x! * ratio, y: n.y! * ratio, z: n.z! * ratio }, { x: n.x!, y: n.y!, z: n.z! }, 1400);
+    this.graph.cameraPosition({ x: n.x * ratio, y: n.y! * ratio, z: n.z! * ratio }, { x: n.x, y: n.y!, z: n.z! }, 1400);
   }
 
   /* ---------- interface superposée */
@@ -466,7 +471,7 @@ class GalaxieView extends ItemView {
       return b;
     };
     mk('⟳', T.rotate, () => {
-      const c = this.graph?.controls() as any;
+      const c = this.graph?.controls() as unknown as Orbit | undefined;
       if (!c) return;
       this.plugin.settings.autoRotate = !this.plugin.settings.autoRotate;
       c.autoRotate = false;            // la souris est sur le bouton, donc sur la vue : reprise en la quittant
@@ -485,7 +490,6 @@ class GalaxieView extends ItemView {
   }
 
   private syncButtons() {
-    const c = this.graph?.controls() as any;
     this.contentEl.querySelector('[data-key="rotate"]')?.toggleClass('is-on', this.plugin.settings.autoRotate);
     this.contentEl.querySelector('[data-key="tags"]')?.toggleClass('is-on', this.plugin.settings.showTags);
   }
@@ -613,7 +617,7 @@ class LinkLayer {
     if (col) {
       const a = col.array as Float32Array;
       const k = active ? 0.18 : 1;                 // estompe tout le reste quand une note est en avant
-      for (let i = 0; i < a.length; i++) a[i] = this.baseColors[i]! * k;
+      for (let i = 0; i < a.length; i++) a[i] = this.baseColors[i] * k;
       col.needsUpdate = true;
     }
     this.activeLinks = active ?? [];
@@ -629,7 +633,7 @@ class LinkLayer {
     const m = sparks ? n * LinkLayer.SPARKS_PER_LINK : 0;
     this.sparks.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(m * 3), 3));
     const sc = new Float32Array(m * 3);
-    for (let i = 0; i < m; i++) sc.set([ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6]!, ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6 + 1]!, ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6 + 2]!], i * 3);
+    for (let i = 0; i < m; i++) sc.set([ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6], ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6 + 1], ac[Math.floor(i / LinkLayer.SPARKS_PER_LINK) * 6 + 2]], i * 3);
     this.sparks.geometry.setAttribute('color', new THREE.BufferAttribute(sc, 3));
     this.writeActive();
   }
@@ -641,7 +645,7 @@ class LinkLayer {
     this.activeLinks.forEach((l, i) => {
       const s = this.resolve(l.source), t = this.resolve(l.target);
       if (!s || !t || s.x === undefined || t.x === undefined) return;
-      a.set([s.x!, s.y!, s.z!, t.x!, t.y!, t.z!], i * 6);
+      a.set([s.x, s.y!, s.z!, t.x, t.y!, t.z!], i * 6);
     });
     attr.needsUpdate = true;
   }
@@ -658,7 +662,7 @@ class LinkLayer {
       if (!s || !t || s.x === undefined || t.x === undefined) return;
       for (let j = 0; j < per; j++) {
         const f = (time * 0.45 + j / per + i * 0.137) % 1;
-        a.set([s.x! + (t.x! - s.x!) * f, s.y! + (t.y! - s.y!) * f, s.z! + (t.z! - s.z!) * f], (i * per + j) * 3);
+        a.set([s.x + (t.x - s.x) * f, s.y! + (t.y! - s.y!) * f, s.z! + (t.z! - s.z!) * f], (i * per + j) * 3);
       }
     });
     attr.needsUpdate = true;
@@ -669,7 +673,7 @@ let _halo: THREE.Texture | null = null;
 function haloTexture(): THREE.Texture {
   if (_halo) return _halo;
   const size = 128;
-  const c = document.createElement('canvas');
+  const c = createEl('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d')!;
   const grd = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
@@ -695,7 +699,7 @@ function makeStars(count: number, radius: number): THREE.Points {
     pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     pos[i * 3 + 2] = r * Math.cos(phi);
-    const t = tints[i % tints.length]!;
+    const t = tints[i % tints.length];
     col[i * 3] = t.r; col[i * 3 + 1] = t.g; col[i * 3 + 2] = t.b;
   }
   const geo = new THREE.BufferGeometry();
@@ -732,10 +736,10 @@ export default class GalaxiePlugin extends Plugin {
 
   async open() {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    if (existing) { this.app.workspace.revealLeaf(existing); return; }
+    if (existing) { await this.app.workspace.revealLeaf(existing); return; }
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   views(): GalaxieView[] {
@@ -743,7 +747,7 @@ export default class GalaxiePlugin extends Plugin {
   }
 
   async loadSettings() {
-    const saved = (await this.loadData()) ?? {};
+    const saved = ((await this.loadData()) ?? {}) as Partial<GalaxieSettings>;
     this.settings = { ...DEFAULTS, ...saved };
     FR = pickLang(this.settings.language);
     T = FR ? TFR : TEN;
@@ -771,12 +775,12 @@ class GalaxieSettingTab extends PluginSettingTab {
       .addOption('auto', T.auto).addOption('fr', 'Français').addOption('en', 'English').setValue(s.language)
       .onChange(async v => { s.language = v as GalaxieSettings['language']; await this.plugin.saveSettings(); }));
     new Setting(containerEl).setName(T.bloom).setDesc(T.bloomDesc)
-      .addSlider(sl => sl.setLimits(0, 1.5, 0.05).setValue(s.bloom).setDynamicTooltip().onChange(async v => { s.bloom = v; await save(); }));
+      .addSlider(sl => sl.setLimits(0, 1.5, 0.05).setValue(s.bloom).onChange(async v => { s.bloom = v; await save(); }));
     new Setting(containerEl).setName(T.showTags).addToggle(t => t.setValue(s.showTags).onChange(async v => { s.showTags = v; await save(true); }));
     new Setting(containerEl).setName(T.orphans).addToggle(t => t.setValue(s.showOrphans).onChange(async v => { s.showOrphans = v; await save(true); }));
     new Setting(containerEl).setName(T.particles).setDesc(T.particlesDesc)
       .addToggle(t => t.setValue(s.particles).onChange(async v => { s.particles = v; await save(); }));
     new Setting(containerEl).setName(T.labels).setDesc(T.labelsDesc)
-      .addSlider(sl => sl.setLimits(0, 60, 1).setValue(s.hubLabels).setDynamicTooltip().onChange(async v => { s.hubLabels = v; await save(true); }));
+      .addSlider(sl => sl.setLimits(0, 60, 1).setValue(s.hubLabels).onChange(async v => { s.hubLabels = v; await save(true); }));
   }
 }

@@ -2,3 +2,4 @@ node_modules/
 dist/
 main.js
 *.log
+eslint.config.mjs
