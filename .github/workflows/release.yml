@@ -27,4 +27,4 @@ jobs:
           VERSION=$(node -p "require('./manifest.json').version")
           if gh release view "$VERSION" >/dev/null 2>&1; then echo "Release $VERSION already exists"; exit 0; fi
           gh release create "$VERSION" dist/main.js manifest.json styles.css --target "$GITHUB_SHA" --title "$VERSION" \
-            --notes "Release $VERSION. Install from Obsidian's community plugins, or copy main.js, manifest.json and styles.css into .obsidian/plugins/galaxie-3d/."
+            --notes "Release $VERSION. Install from Obsidian's community plugins, or copy main.js, manifest.json and styles.css into .obsidian/plugins/galaxie/."
