@@ -11,6 +11,7 @@ const UNUSED = {
   'ngraph.forcelayout': 'export default function () { throw new Error("ngraph engine is not bundled"); }',
   'three/addons/controls/ArcballControls.js': 'export class ArcballControls { constructor() { throw new Error("not bundled"); } }',
   'three/addons/controls/TrackballControls.js': 'export class TrackballControls { constructor() { throw new Error("not bundled"); } }',
+  'three/webgpu': 'export class WebGPURenderer { constructor() { throw new Error("WebGPU renderer is not bundled"); } }',
   'three/addons/controls/FlyControls.js': 'export class FlyControls { constructor() { throw new Error("not bundled"); } }',
 };
 const stubUnused = {
