@@ -1,9 +1,28 @@
 import { App, ItemView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment, type SettingDefinitionItem } from 'obsidian';
-import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph';
-import * as THREE from 'three';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import SpriteText from 'three-spritetext';
+import type { ForceGraph3DInstance } from '3d-force-graph';
+import type * as Three from 'three';
+import type { UnrealBloomPass as BloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import type SpriteTextType from 'three-spritetext';
+
+/* The 3D engine (three.js, 3d-force-graph: about 1.4 MB) is loaded only when a Galaxie view is shown,
+   after Obsidian has finished starting. Until then, none of it is evaluated. */
+type Engine = typeof import('./engine');
+let THREE!: Engine['THREE'];
+let ForceGraph3D!: Engine['ForceGraph3D'];
+let UnrealBloomPass!: Engine['UnrealBloomPass'];
+let OutputPass!: Engine['OutputPass'];
+let SpriteText!: Engine['SpriteText'];
+let SPHERE!: Three.SphereGeometry;
+let OCTA!: Three.OctahedronGeometry;
+let engine: Promise<void> | null = null;
+function loadEngine(): Promise<void> {
+  engine ??= import('./engine').then((e) => {
+    ({ THREE, ForceGraph3D, UnrealBloomPass, OutputPass, SpriteText } = e);
+    SPHERE = new THREE.SphereGeometry(1, 16, 12);
+    OCTA = new THREE.OctahedronGeometry(1, 0);
+  });
+  return engine;
+}
 
 /* Langue de l'interface : celle d'Obsidian (français ou anglais). */
 function pickLang(setting?: string): boolean {
@@ -68,7 +87,7 @@ interface Orbit { autoRotate: boolean; autoRotateSpeed: number; addEventListener
 interface GNode {
   id: string; name: string; kind: 'note' | 'tag'; group: string; deg: number;
   x?: number; y?: number; z?: number;
-  __mat?: THREE.MeshBasicMaterial; __halo?: THREE.SpriteMaterial; __label?: SpriteText;
+  __mat?: Three.MeshBasicMaterial; __halo?: Three.SpriteMaterial; __label?: SpriteTextType;
   __hub?: boolean; __baseOpacity?: number; __baseHalo?: number;
 }
 interface GLink { source: string | GNode; target: string | GNode; group: string }
@@ -130,7 +149,7 @@ const idOf = (end: string | GNode) => (typeof end === 'string' ? end : end.id);
 
 class GalaxieView extends ItemView {
   private graph?: ForceGraph3DInstance;
-  private bloom?: UnrealBloomPass;
+  private bloom?: BloomPass;
   private resizeObs?: ResizeObserver;
   private visObs?: IntersectionObserver;
   private linkLayer?: LinkLayer;
@@ -142,6 +161,7 @@ class GalaxieView extends ItemView {
   private lastClick = { id: '', t: 0 };
   private data: { nodes: GNode[]; links: GLink[] } = { nodes: [], links: [] };
   private byId = new Map<string, GNode>();
+  private closed = false;
   private legendEl!: HTMLElement;
   private infoEl!: HTMLElement;
 
@@ -152,12 +172,20 @@ class GalaxieView extends ItemView {
   getIcon() { return 'orbit'; }
 
   async onOpen() {
+    this.closed = false;
     const root = this.contentEl;
     root.empty();
     root.addClass('galaxie-root');
     const stage = root.createDiv({ cls: 'galaxie-stage' });
     this.buildHud(root);
+    // The 3D engine starts only once Obsidian has finished loading: a Galaxie tab restored at startup
+    // costs nothing until then.
+    this.app.workspace.onLayoutReady(() => { window.setTimeout(() => void this.start(stage), 0); });
+  }
 
+  private async start(stage: HTMLElement) {
+    await loadEngine();
+    if (this.closed || !stage.isConnected) return;
     const g = new ForceGraph3D(stage, { controlType: 'orbit' });
     this.graph = g;
     // Horodatage des VRAIS clics de souris : onNodeClick arrive avec un retard variable (~250 ms),
@@ -251,6 +279,7 @@ class GalaxieView extends ItemView {
   }
 
   async onClose() {
+    this.closed = true;
     this.resizeObs?.disconnect();
     this.visObs?.disconnect();
     this.graph?._destructor();
@@ -300,7 +329,7 @@ class GalaxieView extends ItemView {
     return n.kind === 'tag' ? 1.4 + Math.sqrt(n.deg) * 0.3 : 3 + Math.sqrt(n.deg) * 1.0;
   }
 
-  private makeNode(n: GNode): THREE.Object3D {
+  private makeNode(n: GNode): Three.Object3D {
     const color = new THREE.Color(this.colors.get(n.group) ?? '#ffffff');
     const group = new THREE.Group();
     const r = this.radius(n);
@@ -433,7 +462,7 @@ class GalaxieView extends ItemView {
     // rayon qui contient 95 % des notes (une note isolée très loin ne doit pas tout rapetisser)
     const d = pts.map(n => Math.hypot(n.x! - c.x, n.y! - c.y, n.z! - c.z)).sort((a, b) => a - b);
     const r = Math.max(40, d[Math.floor(d.length * 0.95)] ?? 40);
-    const cam = g.camera() as THREE.PerspectiveCamera;
+    const cam = g.camera() as Three.PerspectiveCamera;
     const fov = (cam.fov * Math.PI) / 180;
     const aspect = Math.min(1, cam.aspect || 1);
     const dist = (r / Math.sin(Math.atan(Math.tan(fov / 2) * aspect))) * 1.05;
@@ -543,8 +572,6 @@ class GalaxieView extends ItemView {
 
 /* ---------------------------------------------------------------- utilitaires 3D */
 
-const SPHERE = new THREE.SphereGeometry(1, 16, 12);
-const OCTA = new THREE.OctahedronGeometry(1, 0);
 
 type Resolve = (end: string | GNode) => GNode | undefined;
 
@@ -553,17 +580,17 @@ type Resolve = (end: string | GNode) => GNode | undefined;
  * qui circulent dessus. Le survol ne fait que réécrire des couleurs : aucun objet n'est recréé.
  */
 class LinkLayer {
-  private base: THREE.LineSegments;
-  private active: THREE.LineSegments;
-  private sparks: THREE.Points;
+  private base: Three.LineSegments;
+  private active: Three.LineSegments;
+  private sparks: Three.Points;
   private links: GLink[] = [];
   private baseColors = new Float32Array(0);
   private activeLinks: GLink[] = [];
-  private activeColors: THREE.Color[] = [];
+  private activeColors: Three.Color[] = [];
   private showSparks = true;
   private static SPARKS_PER_LINK = 3;
 
-  constructor(scene: THREE.Scene, private resolve: Resolve) {
+  constructor(scene: Three.Scene, private resolve: Resolve) {
     const lineMat = (opacity: number) => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity, depthWrite: false });
     this.base = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat(0.42));
     this.active = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat(0.95));
@@ -598,7 +625,7 @@ class LinkLayer {
 
   /** Recopie les positions des notes dans le tampon (pendant que la mise en place bouge). */
   syncPositions() {
-    const attr = this.base.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const attr = this.base.geometry.getAttribute('position') as Three.BufferAttribute | undefined;
     if (!attr) return;
     const a = attr.array as Float32Array;
     this.links.forEach((l, i) => {
@@ -613,7 +640,7 @@ class LinkLayer {
 
   setFocus(active: GLink[] | null, sparks: boolean) {
     this.showSparks = sparks;
-    const col = this.base.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    const col = this.base.geometry.getAttribute('color') as Three.BufferAttribute | undefined;
     if (col) {
       const a = col.array as Float32Array;
       const k = active ? 0.18 : 1;                 // estompe tout le reste quand une note est en avant
@@ -639,7 +666,7 @@ class LinkLayer {
   }
 
   private writeActive() {
-    const attr = this.active.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const attr = this.active.geometry.getAttribute('position') as Three.BufferAttribute | undefined;
     if (!attr || !this.activeLinks.length) return;
     const a = attr.array as Float32Array;
     this.activeLinks.forEach((l, i) => {
@@ -652,7 +679,7 @@ class LinkLayer {
 
   private animate() {
     if (!this.showSparks || !this.activeLinks.length) return;
-    const attr = this.sparks.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const attr = this.sparks.geometry.getAttribute('position') as Three.BufferAttribute | undefined;
     if (!attr) return;
     const a = attr.array as Float32Array;
     const time = performance.now() / 1000;
@@ -669,8 +696,8 @@ class LinkLayer {
   }
 }
 
-let _halo: THREE.Texture | null = null;
-function haloTexture(): THREE.Texture {
+let _halo: Three.Texture | null = null;
+function haloTexture(): Three.Texture {
   if (_halo) return _halo;
   const size = 128;
   const c = createEl('canvas');
@@ -687,7 +714,7 @@ function haloTexture(): THREE.Texture {
   return _halo;
 }
 
-function makeStars(count: number, radius: number): THREE.Points {
+function makeStars(count: number, radius: number): Three.Points {
   const pos = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
   const tints = [new THREE.Color('#ffffff'), new THREE.Color('#a9c7ff'), new THREE.Color('#ffd6a5'), new THREE.Color('#d0b3ff')];
