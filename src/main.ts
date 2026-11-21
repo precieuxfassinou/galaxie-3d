@@ -3,6 +3,7 @@ import type { ForceGraph3DInstance } from '3d-force-graph';
 import type * as Three from 'three';
 import type { UnrealBloomPass as BloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type SpriteTextType from 'three-spritetext';
+import { makeSky } from './sky';
 
 /* The 3D engine (three.js, 3d-force-graph: about 1.4 MB) is loaded only when a Galaxie view is shown,
    after Obsidian has finished starting. Until then, none of it is evaluated. */
@@ -44,6 +45,7 @@ const TFR = {
   changeColor: 'Changer la couleur', resetColor: 'Revenir à la couleur par défaut', resetAll: 'Réinitialiser toutes les couleurs',
   resetAllDesc: 'Remet la palette d\'origine pour tous les dossiers.', reset: 'Réinitialiser',
   byDefault: 'Par défaut', otherColor: 'Autre couleur…', custom: 'Personnalisée',
+  nebulae: 'Nébuleuses en arrière-plan', nebulaeDesc: 'Légers nuages colorés derrière les étoiles',
 };
 const TEN: typeof TFR = {
   open: 'Open 3D galaxy', rotate: 'Auto-rotate', fit: 'Re-center', tags: 'Show tags',
@@ -57,6 +59,7 @@ const TEN: typeof TFR = {
   changeColor: 'Change color', resetColor: 'Back to the default color', resetAll: 'Reset all colors',
   resetAllDesc: 'Restores the original palette for every folder.', reset: 'Reset',
   byDefault: 'Default', otherColor: 'Other color…', custom: 'Custom',
+  nebulae: 'Background nebulae', nebulaeDesc: 'Faint colored clouds behind the stars',
 };
 let T = FR ? TFR : TEN;
 
@@ -76,10 +79,11 @@ interface GalaxieSettings {
   hiddenGroups: string[];
   language: 'auto' | 'fr' | 'en';
   groupColors: Record<string, string>;   // couleurs choisies par l'utilisateur (dossier, '/' = racine, '#tags')
+  nebulae: boolean;                      // nuages colorés derrière les étoiles
 }
 
 const DEFAULTS: GalaxieSettings = {
-  version: 3, bloom: 0.55, showTags: false, showOrphans: true, autoRotate: true, hubLabels: 18, particles: true, hiddenGroups: [], language: 'auto', groupColors: {},
+  version: 3, bloom: 0.55, showTags: false, showOrphans: true, autoRotate: true, hubLabels: 18, particles: true, hiddenGroups: [], language: 'auto', groupColors: {}, nebulae: true,
 };
 
 /* Palette vive, lisible sur fond sombre et flatteuse avec le halo */
@@ -256,6 +260,7 @@ class GalaxieView extends ItemView {
   private linkLayer?: LinkLayer;
   private signature = '';
   private colors = new Map<string, string>();
+  private sky?: Three.Group;
   private neighbors = new Map<string, Set<string>>();
   private hovered: GNode | null = null;
   private selected: GNode | null = null;
@@ -325,7 +330,8 @@ class GalaxieView extends ItemView {
 
     // Fond opaque (sinon le thème d'Obsidian transparaît) + étoiles
     g.scene().background = new THREE.Color('#05060d');
-    g.scene().add(makeStars(2600, 2200));
+    this.sky = makeSky(THREE, 3200, 2200, this.plugin.settings.nebulae);
+    g.scene().add(this.sky);
     this.linkLayer = new LinkLayer(g.scene(), (end) => (typeof end === 'string' ? this.byId.get(end) : end));
     // Résolution plafonnée : sur un écran haute densité, le rendu coûtait 2 à 4 fois plus cher
     const ratio = Math.min(window.devicePixelRatio || 1, 1.25);
@@ -680,6 +686,15 @@ class GalaxieView extends ItemView {
     if (this.bloom) this.bloom.strength = this.plugin.settings.bloom;
   }
 
+  /** Recrée le ciel de fond (après un changement du réglage des nébuleuses). */
+  applySky() {
+    const g = this.graph;
+    if (!g || !this.sky) return;
+    g.scene().remove(this.sky);
+    this.sky = makeSky(THREE, 3200, 2200, this.plugin.settings.nebulae);
+    g.scene().add(this.sky);
+  }
+
   /** Aperçu pendant que l'utilisateur fait glisser le sélecteur : rien n'est encore enregistré. */
   private previewColor(group: string, color: string, dot: HTMLElement) {
     if (!HEX.test(color)) return;
@@ -851,30 +866,6 @@ function haloTexture(): Three.Texture {
   return _halo;
 }
 
-function makeStars(count: number, radius: number): Three.Points {
-  const pos = new Float32Array(count * 3);
-  const col = new Float32Array(count * 3);
-  const tints = [new THREE.Color('#ffffff'), new THREE.Color('#a9c7ff'), new THREE.Color('#ffd6a5'), new THREE.Color('#d0b3ff')];
-  for (let i = 0; i < count; i++) {
-    // répartition uniforme sur une coquille épaisse
-    const u = Math.random(), v = Math.random();
-    const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
-    const r = radius * (0.6 + Math.random() * 0.4);
-    pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    pos[i * 3 + 2] = r * Math.cos(phi);
-    const t = tints[i % tints.length];
-    col[i * 3] = t.r; col[i * 3 + 1] = t.g; col[i * 3 + 2] = t.b;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const mat = new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false });
-  const stars = new THREE.Points(geo, mat);
-  stars.raycast = () => {};
-  return stars;
-}
-
 /** Assombrit une couleur vers le fond (k = part de la couleur conservée). */
 function dim(hex: string, k: number): string {
   const c = new THREE.Color(hex).lerp(new THREE.Color('#05060d'), 1 - k);
@@ -957,6 +948,7 @@ class GalaxieSettingTab extends PluginSettingTab {
       { name: T.showTags, control: { type: 'toggle', key: 'showTags' } },
       { name: T.orphans, control: { type: 'toggle', key: 'showOrphans' } },
       { name: T.particles, desc: T.particlesDesc, control: { type: 'toggle', key: 'particles' } },
+      { name: T.nebulae, desc: T.nebulaeDesc, control: { type: 'toggle', key: 'nebulae' } },
       { name: T.labels, desc: T.labelsDesc, control: { type: 'slider', key: 'hubLabels', min: 0, max: 60, step: 1 } },
       {
         type: 'group', heading: T.colors,
@@ -1012,12 +1004,12 @@ class GalaxieSettingTab extends PluginSettingTab {
     switch (key) {
       case 'language': if (value === 'auto' || value === 'fr' || value === 'en') s.language = value; break;
       case 'bloom': case 'hubLabels': if (typeof value === 'number' && Number.isFinite(value)) s[key] = value; break;
-      case 'showTags': case 'showOrphans': case 'particles': s[key] = value === true; break;
+      case 'showTags': case 'showOrphans': case 'particles': case 'nebulae': s[key] = value === true; break;
       default: return;
     }
     await this.plugin.saveSettings();
     const rebuild = key === 'showTags' || key === 'showOrphans' || key === 'hubLabels';
-    for (const v of this.plugin.views()) { if (rebuild) v.refresh(); else v.applyBloom(); }
+    for (const v of this.plugin.views()) { if (rebuild) v.refresh(); else if (key === 'nebulae') v.applySky(); else v.applyBloom(); }
   }
 
   display() {
@@ -1037,6 +1029,8 @@ class GalaxieSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(T.orphans).addToggle(t => t.setValue(s.showOrphans).onChange(async v => { s.showOrphans = v; await save(true); }));
     new Setting(containerEl).setName(T.particles).setDesc(T.particlesDesc)
       .addToggle(t => t.setValue(s.particles).onChange(async v => { s.particles = v; await save(); }));
+    new Setting(containerEl).setName(T.nebulae).setDesc(T.nebulaeDesc)
+      .addToggle(t => t.setValue(s.nebulae).onChange(async v => { s.nebulae = v; await this.plugin.saveSettings(); for (const w of this.plugin.views()) w.applySky(); }));
     new Setting(containerEl).setName(T.labels).setDesc(T.labelsDesc)
       .addSlider(sl => sl.setLimits(0, 60, 1).setValue(s.hubLabels).onChange(async v => { s.hubLabels = v; await save(true); }));
 
