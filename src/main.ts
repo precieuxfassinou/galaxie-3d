@@ -43,6 +43,7 @@ const TFR = {
   colors: 'Couleurs des dossiers', colorsDesc: 'Une couleur par dossier principal. Astuce : clique aussi sur la pastille d\'un dossier dans la légende de la galaxie.',
   changeColor: 'Changer la couleur', resetColor: 'Revenir à la couleur par défaut', resetAll: 'Réinitialiser toutes les couleurs',
   resetAllDesc: 'Remet la palette d\'origine pour tous les dossiers.', reset: 'Réinitialiser',
+  byDefault: 'Par défaut', otherColor: 'Autre couleur…', custom: 'Personnalisée',
 };
 const TEN: typeof TFR = {
   open: 'Open 3D galaxy', rotate: 'Auto-rotate', fit: 'Re-center', tags: 'Show tags',
@@ -55,6 +56,7 @@ const TEN: typeof TFR = {
   colors: 'Folder colors', colorsDesc: 'One color per top-level folder. Tip: you can also click a folder\'s dot in the galaxy legend.',
   changeColor: 'Change color', resetColor: 'Back to the default color', resetAll: 'Reset all colors',
   resetAllDesc: 'Restores the original palette for every folder.', reset: 'Reset',
+  byDefault: 'Default', otherColor: 'Other color…', custom: 'Custom',
 };
 let T = FR ? TFR : TEN;
 
@@ -142,6 +144,83 @@ function buildGraph(app: App, s: GalaxieSettings) {
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Couleurs proposées à l'utilisateur : [hex, nom français, nom anglais]. */
+const NAMED_COLORS: [string, string, string][] = [
+  ['#000000', 'Noir', 'Black'], ['#555555', 'Gris foncé', 'Dark gray'], ['#9e9e9e', 'Gris', 'Gray'], ['#ffffff', 'Blanc', 'White'],
+  ['#ff1f1f', 'Rouge', 'Red'], ['#9b111e', 'Bordeaux', 'Burgundy'], ['#ff6f61', 'Corail', 'Coral'], ['#ff69b4', 'Rose', 'Pink'],
+  ['#ff00ff', 'Magenta', 'Magenta'], ['#9d4edd', 'Violet', 'Purple'], ['#c4b5fd', 'Lavande', 'Lavender'], ['#3a3aff', 'Indigo', 'Indigo'],
+  ['#1e5bff', 'Bleu', 'Blue'], ['#4cc9f0', 'Bleu ciel', 'Sky blue'], ['#00ffff', 'Cyan', 'Cyan'], ['#20c997', 'Turquoise', 'Turquoise'],
+  ['#22c55e', 'Vert', 'Green'], ['#15803d', 'Vert foncé', 'Dark green'], ['#a3e635', 'Vert citron', 'Lime'], ['#ffeb3b', 'Jaune', 'Yellow'],
+  ['#ffc300', 'Or', 'Gold'], ['#ff8c00', 'Orange', 'Orange'], ['#8b4513', 'Marron', 'Brown'], ['#f5deb3', 'Beige', 'Beige'],
+];
+
+/** Nom d'une couleur de la palette, ou « Personnalisée ». */
+function colorName(hex: string): string {
+  const c = NAMED_COLORS.find(([h]) => h === hex.toLowerCase());
+  return c ? (FR ? c[1] : c[2]) : T.custom;
+}
+
+interface SwatchHandlers {
+  onPreview: (hex: string) => void;   // survol : aperçu
+  onCancel: () => void;               // fermeture sans choix : revenir à la couleur actuelle
+  onPick: (hex: string) => void;      // choix d'une couleur
+  onReset: () => void;                // retour à la couleur par défaut
+}
+
+let openPopover: { close: () => void } | null = null;
+
+/** Petite fenêtre de couleurs nommées, ouverte sous l'élément cliqué. */
+function openSwatches(anchor: HTMLElement, title: string, current: string, h: SwatchHandlers) {
+  openPopover?.close();
+  const doc = anchor.ownerDocument;
+  const pop = doc.body.createDiv({ cls: 'galaxie-swatches' });
+  pop.createDiv({ cls: 'galaxie-swatches-title', text: title });
+  const grid = pop.createDiv({ cls: 'galaxie-swatches-grid' });
+  let done = false;
+  const close = () => {
+    if (!done) h.onCancel();
+    done = true;
+    pop.remove();
+    doc.removeEventListener('pointerdown', outside, true);
+    doc.removeEventListener('keydown', onKey, true);
+    if (openPopover?.close === close) openPopover = null;
+  };
+  const pick = (hex: string) => { done = true; h.onPick(hex); close(); };
+  for (const [hex, fr, en] of NAMED_COLORS) {
+    const name = FR ? fr : en;
+    const b = grid.createEl('button', { cls: 'galaxie-swatch', attr: { 'aria-label': name, title: name } });
+    b.style.background = hex;
+    if (hex === current.toLowerCase()) b.addClass('is-current');
+    b.addEventListener('mouseenter', () => h.onPreview(hex));
+    b.addEventListener('focus', () => h.onPreview(hex));
+    b.addEventListener('click', (e) => { e.stopPropagation(); pick(hex); });
+  }
+  grid.addEventListener('mouseleave', () => h.onPreview(current));
+  const foot = pop.createDiv({ cls: 'galaxie-swatches-foot' });
+  const def = foot.createEl('button', { cls: 'galaxie-swatches-btn', text: T.byDefault });
+  def.addEventListener('click', (e) => { e.stopPropagation(); done = true; h.onReset(); close(); });
+  const other = foot.createEl('button', { cls: 'galaxie-swatches-btn', text: T.otherColor });
+  const input = foot.createEl('input', { type: 'color', cls: 'galaxie-color-input' });
+  input.value = current;
+  other.addEventListener('click', (e) => { e.stopPropagation(); try { input.showPicker(); } catch { input.click(); } });
+  input.addEventListener('input', () => h.onPreview(input.value));
+  input.addEventListener('change', () => pick(input.value));
+
+  // Position : sous l'élément, sans sortir de la fenêtre
+  const r = anchor.getBoundingClientRect();
+  const win = doc.defaultView ?? window;
+  const w = 236, hgt = 230;
+  pop.style.left = `${Math.max(8, Math.min(r.left, win.innerWidth - w - 8))}px`;
+  pop.style.top = `${r.bottom + 6 + hgt > win.innerHeight ? Math.max(8, r.top - hgt - 6) : r.bottom + 6}px`;
+
+  const outside = (e: Event) => { if (!pop.contains(e.target as Node) && e.target !== anchor) close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  doc.addEventListener('pointerdown', outside, true);
+  doc.addEventListener('keydown', onKey, true);
+  openPopover = { close };
+  pop.querySelector<HTMLElement>('.galaxie-swatch.is-current')?.focus();
+}
 
 /** Couleurs par défaut : palette attribuée aux dossiers dans l'ordre alphabétique. */
 function defaultColors(groups: string[]): Map<string, string> {
@@ -555,16 +634,16 @@ class GalaxieView extends ItemView {
       const row = this.legendEl.createDiv({ cls: 'galaxie-legend-row' + (hidden.includes(group) ? ' is-off' : '') });
       const dot = row.createSpan({ cls: 'galaxie-dot is-editable', attr: { 'aria-label': T.changeColor } });
       dot.style.background = color; dot.style.boxShadow = `0 0 8px ${color}`;
-      const picker = dot.createEl('input', { type: 'color', cls: 'galaxie-color-input', attr: { tabindex: '-1' } });
-      picker.value = color;
-      // Clic sur la pastille : choisir la couleur (sans masquer le dossier)
+      // Clic sur la pastille : choisir la couleur dans la palette (sans masquer le dossier)
       dot.addEventListener('click', (e) => {
         e.stopPropagation();
-        try { picker.showPicker(); } catch { picker.click(); }
+        openSwatches(dot, group === '/' ? T.root : group === '#tags' ? 'Tags' : group, color, {
+          onPreview: (hex) => this.previewColor(group, hex, dot),
+          onCancel: () => this.previewColor(group, color, dot),
+          onPick: (hex) => { void this.plugin.setGroupColor(group, hex); },
+          onReset: () => { void this.plugin.setGroupColor(group, null); },
+        });
       });
-      picker.addEventListener('click', (e) => e.stopPropagation());
-      picker.addEventListener('input', () => this.previewColor(group, picker.value, dot));
-      picker.addEventListener('change', () => { void this.plugin.setGroupColor(group, picker.value); });
       row.createSpan({ text: group === '/' ? T.root : group === '#tags' ? 'Tags' : group, cls: 'galaxie-legend-name' });
       row.createSpan({ text: String(counts.get(group)), cls: 'galaxie-legend-count' });
       row.addEventListener('click', () => {
@@ -901,9 +980,20 @@ class GalaxieSettingTab extends PluginSettingTab {
   /** Une ligne « dossier » : sélecteur de couleur + bouton de retour à la couleur par défaut. */
   private colorRow(setting: Setting, group: string) {
     const chosen = this.plugin.settings.groupColors[group];
-    setting.addColorPicker(cp => cp
-      .setValue(this.plugin.currentColors().get(group) ?? '#ffffff')
-      .onChange(async v => { await this.plugin.setGroupColor(group, v); this.refreshReset(setting, group); }));
+    const current = this.plugin.currentColors().get(group) ?? '#ffffff';
+    setting.addButton(b => {
+      b.buttonEl.addClass('galaxie-color-button');
+      b.buttonEl.empty();
+      const dot = b.buttonEl.createSpan({ cls: 'galaxie-dot' });
+      dot.style.background = current;
+      b.buttonEl.createSpan({ text: colorName(current) });
+      b.onClick(() => openSwatches(b.buttonEl, this.groupLabel(group), current, {
+        onPreview: (hex) => { dot.style.background = hex; },
+        onCancel: () => { dot.style.background = current; },
+        onPick: (hex) => { void this.plugin.setGroupColor(group, hex).then(() => this.rerender()); },
+        onReset: () => { void this.plugin.setGroupColor(group, null).then(() => this.rerender()); },
+      }));
+    });
     setting.addExtraButton(b => b.setIcon('rotate-ccw').setTooltip(T.resetColor).setDisabled(!chosen)
       .onClick(async () => {
         await this.plugin.setGroupColor(group, null);
@@ -915,11 +1005,6 @@ class GalaxieSettingTab extends PluginSettingTab {
   private rerender() {
     const tab = this as unknown as { update?: () => void };
     if (typeof tab.update === 'function') tab.update(); else this.display();
-  }
-
-  private refreshReset(setting: Setting, group: string) {
-    const btn = setting.controlEl.querySelector('.extra-setting-button');
-    btn?.toggleClass('is-disabled', !this.plugin.settings.groupColors[group]);
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {

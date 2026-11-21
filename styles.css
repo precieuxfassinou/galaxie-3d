@@ -107,10 +107,39 @@
 .galaxie-tip span { color: #9aa1cf; }
 .galaxie-root .float-tooltip-kap { background: transparent; padding: 0; }
 
-/* Folder colors chosen by the user: the legend dot opens a color picker */
-.galaxie-dot.is-editable { position: relative; cursor: pointer; transition: transform 0.12s ease; }
+/* Folder colors chosen by the user: the legend dot opens a palette of named colors */
+.galaxie-dot.is-editable { cursor: pointer; transition: transform 0.12s ease; }
 .galaxie-dot.is-editable:hover { transform: scale(1.45); outline: 1px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
-.galaxie-color-input {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: 0; padding: 0; border: 0; pointer-events: none;
+.galaxie-color-input { position: absolute; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; pointer-events: none; }
+
+.galaxie-swatches {
+  position: fixed; z-index: var(--layer-menu, 60);
+  width: 236px; padding: 10px;
+  background: rgba(12, 14, 32, 0.97);
+  border: 1px solid rgba(140, 160, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: #e6e8f2; font-size: 12px;
 }
+.galaxie-swatches-title { font-weight: 600; margin: 0 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.galaxie-swatches-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+.galaxie-swatches button.galaxie-swatch {
+  width: 28px; height: 28px; padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: none; cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.galaxie-swatches button.galaxie-swatch:hover,
+.galaxie-swatches button.galaxie-swatch:focus-visible { transform: scale(1.18); border-color: #fff; }
+.galaxie-swatches button.galaxie-swatch.is-current { outline: 2px solid #fff; outline-offset: 2px; }
+.galaxie-swatches-foot { display: flex; gap: 6px; margin-top: 10px; position: relative; }
+.galaxie-swatches button.galaxie-swatches-btn {
+  flex: 1; height: 26px; font-size: 11px;
+  background: rgba(255, 255, 255, 0.06); color: #cfd4ff;
+  border: 1px solid rgba(140, 160, 255, 0.25); border-radius: 8px; box-shadow: none; cursor: pointer;
+}
+.galaxie-swatches button.galaxie-swatches-btn:hover { color: #fff; border-color: rgba(76, 201, 240, 0.7); }
+
+button.galaxie-color-button { display: inline-flex; align-items: center; gap: 8px; }
+button.galaxie-color-button .galaxie-dot { width: 14px; height: 14px; border: 1px solid rgba(127, 127, 127, 0.5); }
