@@ -1,4 +1,4 @@
-import { App, ItemView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment, type SettingDefinitionItem } from 'obsidian';
+import { App, ItemView, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, debounce, getAllTags, moment, type SettingDefinitionItem } from 'obsidian';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import type * as Three from 'three';
 import type { UnrealBloomPass as BloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -34,6 +34,7 @@ function pickLang(setting?: string): boolean {
 }
 let FR = pickLang();
 const TFR = {
+  restart: 'Galaxie 3D a été mise à jour : redémarre Obsidian pour terminer.',
   open: 'Ouvrir la galaxie 3D', rotate: 'Rotation automatique', fit: 'Recentrer', tags: 'Afficher les tags',
   help: 'Clic : centrer · Double-clic ou Ctrl+clic : ouvrir · Glisser : tourner · Molette : zoom',
   root: 'Racine', openNote: 'Ouvrir la note', notes: 'notes', links: 'liens', link: 'lien', search: 'Chercher une note…',
@@ -48,6 +49,7 @@ const TFR = {
   nebulae: 'Nébuleuses en arrière-plan', nebulaeDesc: 'Légers nuages colorés derrière les étoiles',
 };
 const TEN: typeof TFR = {
+  restart: 'Galaxie 3D was updated: restart Obsidian to finish.',
   open: 'Open 3D galaxy', rotate: 'Auto-rotate', fit: 'Re-center', tags: 'Show tags',
   help: 'Click: focus · Double-click or Ctrl+click: open · Drag: rotate · Wheel: zoom',
   root: 'Root', openNote: 'Open note', notes: 'notes', links: 'links', link: 'link', search: 'Search a note…',
@@ -389,7 +391,8 @@ class GalaxieView extends ItemView {
     this.closed = true;
     this.resizeObs?.disconnect();
     this.visObs?.disconnect();
-    this.graph?._destructor();
+    // Une erreur ici interromprait la désactivation du plugin et bloquerait son rechargement
+    try { this.graph?._destructor(); } catch (e) { console.warn('Galaxie 3D: graph cleanup failed', e); }
     this.graph = undefined;
     this.contentEl.empty();
   }
@@ -883,7 +886,13 @@ export default class GalaxiePlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-    this.registerView(VIEW_TYPE, (leaf) => new GalaxieView(leaf, this));
+    try {
+      this.registerView(VIEW_TYPE, (leaf) => new GalaxieView(leaf, this));
+    } catch (e) {
+      // L'ancienne version n'a pas libéré sa vue (mise à jour sans redémarrage) : on prévient au lieu d'échouer
+      console.warn('Galaxie 3D: view type still registered by a previous version', e);
+      new Notice(T.restart, 10000);
+    }
     this.addRibbonIcon('orbit', T.open, () => void this.open());
     this.addCommand({ id: 'open', name: T.open, callback: () => void this.open() });
     this.addSettingTab(new GalaxieSettingTab(this.app, this));
