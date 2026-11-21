@@ -1,6 +1,6 @@
 {
   "name": "galaxie-3d",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "Colorful 3D graph view for Obsidian",
   "scripts": {
     "build": "node build.mjs"

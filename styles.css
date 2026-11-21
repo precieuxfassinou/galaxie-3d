@@ -106,3 +106,11 @@
 .galaxie-tip b { color: #fff; }
 .galaxie-tip span { color: #9aa1cf; }
 .galaxie-root .float-tooltip-kap { background: transparent; padding: 0; }
+
+/* Folder colors chosen by the user: the legend dot opens a color picker */
+.galaxie-dot.is-editable { position: relative; cursor: pointer; transition: transform 0.12s ease; }
+.galaxie-dot.is-editable:hover { transform: scale(1.45); outline: 1px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
+.galaxie-color-input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; padding: 0; border: 0; pointer-events: none;
+}

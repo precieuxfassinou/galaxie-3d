@@ -40,6 +40,9 @@ const TFR = {
   orphans: 'Afficher les notes isolées', particles: 'Particules sur les liens', particlesDesc: 'Sur les liens de la note survolée ou sélectionnée',
   labels: 'Noms toujours visibles', labelsDesc: 'Nombre de notes les plus reliées dont le nom reste affiché',
   language: 'Langue', languageDesc: 'Automatique : celle d\'Obsidian. Recharge le plugin après un changement.', auto: 'Automatique',
+  colors: 'Couleurs des dossiers', colorsDesc: 'Une couleur par dossier principal. Astuce : clique aussi sur la pastille d\'un dossier dans la légende de la galaxie.',
+  changeColor: 'Changer la couleur', resetColor: 'Revenir à la couleur par défaut', resetAll: 'Réinitialiser toutes les couleurs',
+  resetAllDesc: 'Remet la palette d\'origine pour tous les dossiers.', reset: 'Réinitialiser',
 };
 const TEN: typeof TFR = {
   open: 'Open 3D galaxy', rotate: 'Auto-rotate', fit: 'Re-center', tags: 'Show tags',
@@ -49,6 +52,9 @@ const TEN: typeof TFR = {
   orphans: 'Show orphan notes', particles: 'Particles on links', particlesDesc: 'On the links of the hovered or selected note',
   labels: 'Always-visible names', labelsDesc: 'How many of the most linked notes keep their name displayed',
   language: 'Language', languageDesc: 'Automatic: Obsidian\'s language. Reload the plugin after a change.', auto: 'Automatic',
+  colors: 'Folder colors', colorsDesc: 'One color per top-level folder. Tip: you can also click a folder\'s dot in the galaxy legend.',
+  changeColor: 'Change color', resetColor: 'Back to the default color', resetAll: 'Reset all colors',
+  resetAllDesc: 'Restores the original palette for every folder.', reset: 'Reset',
 };
 let T = FR ? TFR : TEN;
 
@@ -67,10 +73,11 @@ interface GalaxieSettings {
   particles: boolean;     // particules qui circulent sur les liens de la note survolée
   hiddenGroups: string[];
   language: 'auto' | 'fr' | 'en';
+  groupColors: Record<string, string>;   // couleurs choisies par l'utilisateur (dossier, '/' = racine, '#tags')
 }
 
 const DEFAULTS: GalaxieSettings = {
-  version: 3, bloom: 0.55, showTags: false, showOrphans: true, autoRotate: true, hubLabels: 18, particles: true, hiddenGroups: [], language: 'auto',
+  version: 3, bloom: 0.55, showTags: false, showOrphans: true, autoRotate: true, hubLabels: 18, particles: true, hiddenGroups: [], language: 'auto', groupColors: {},
 };
 
 /* Palette vive, lisible sur fond sombre et flatteuse avec le halo */
@@ -134,13 +141,28 @@ function buildGraph(app: App, s: GalaxieSettings) {
   return { nodes: list, links: links.filter(l => keep.has(l.source as string) && keep.has(l.target as string)) };
 }
 
-function colorMap(nodes: GNode[]): Map<string, string> {
-  const groups = [...new Set(nodes.filter(n => n.kind === 'note').map(n => n.group))].sort((a, b) => a.localeCompare(b));
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Couleurs par défaut : palette attribuée aux dossiers dans l'ordre alphabétique. */
+function defaultColors(groups: string[]): Map<string, string> {
+  const sorted = [...new Set(groups)].filter(g => g !== '#tags').sort((a, b) => a.localeCompare(b));
   const m = new Map<string, string>();
   let i = 0;
-  for (const g of groups) m.set(g, g === '/' ? ROOT_COLOR : PALETTE[i++ % PALETTE.length]);
+  for (const g of sorted) m.set(g, g === '/' ? ROOT_COLOR : PALETTE[i++ % PALETTE.length]);
   m.set('#tags', TAG_COLOR);
   return m;
+}
+
+/** Couleur de chaque dossier : celle choisie par l'utilisateur si elle existe, sinon celle de la palette. */
+function colorMap(groups: string[], chosen: Record<string, string>): Map<string, string> {
+  const m = defaultColors(groups);
+  for (const g of m.keys()) if (HEX.test(chosen[g] ?? '')) m.set(g, chosen[g].toLowerCase());
+  return m;
+}
+
+/** Dossiers principaux du vault qui contiennent des notes, plus la racine si besoin. */
+function vaultGroups(app: App): string[] {
+  return [...new Set(app.vault.getMarkdownFiles().map(f => topFolder(f.path)))];
 }
 
 const idOf = (end: string | GNode) => (typeof end === 'string' ? end : end.id);
@@ -304,7 +326,7 @@ class GalaxieView extends ItemView {
     }
     this.data = next;
     this.byId = new Map(next.nodes.map(n => [n.id, n]));
-    this.colors = colorMap(next.nodes);
+    this.colors = this.plugin.currentColors();   // mêmes couleurs que dans les réglages, quels que soient les filtres
     this.neighbors = new Map();
     for (const l of next.links) {
       const a = idOf(l.source), b = idOf(l.target);
@@ -531,8 +553,18 @@ class GalaxieView extends ItemView {
     for (const [group, color] of this.colors) {
       if (!counts.has(group)) continue;
       const row = this.legendEl.createDiv({ cls: 'galaxie-legend-row' + (hidden.includes(group) ? ' is-off' : '') });
-      const dot = row.createSpan({ cls: 'galaxie-dot' });
+      const dot = row.createSpan({ cls: 'galaxie-dot is-editable', attr: { 'aria-label': T.changeColor } });
       dot.style.background = color; dot.style.boxShadow = `0 0 8px ${color}`;
+      const picker = dot.createEl('input', { type: 'color', cls: 'galaxie-color-input', attr: { tabindex: '-1' } });
+      picker.value = color;
+      // Clic sur la pastille : choisir la couleur (sans masquer le dossier)
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try { picker.showPicker(); } catch { picker.click(); }
+      });
+      picker.addEventListener('click', (e) => e.stopPropagation());
+      picker.addEventListener('input', () => this.previewColor(group, picker.value, dot));
+      picker.addEventListener('change', () => { void this.plugin.setGroupColor(group, picker.value); });
       row.createSpan({ text: group === '/' ? T.root : group === '#tags' ? 'Tags' : group, cls: 'galaxie-legend-name' });
       row.createSpan({ text: String(counts.get(group)), cls: 'galaxie-legend-count' });
       row.addEventListener('click', () => {
@@ -567,6 +599,32 @@ class GalaxieView extends ItemView {
 
   applyBloom() {
     if (this.bloom) this.bloom.strength = this.plugin.settings.bloom;
+  }
+
+  /** Aperçu pendant que l'utilisateur fait glisser le sélecteur : rien n'est encore enregistré. */
+  private previewColor(group: string, color: string, dot: HTMLElement) {
+    if (!HEX.test(color)) return;
+    dot.style.background = color; dot.style.boxShadow = `0 0 8px ${color}`;
+    this.colors.set(group, color);
+    this.recolor(false);
+  }
+
+  /** Recalcule les couleurs à partir des réglages et repeint nœuds, halos, liens et légende. */
+  applyColors() {
+    if (!this.data.nodes.length) return;
+    this.colors = this.plugin.currentColors();   // mêmes couleurs que dans les réglages, quels que soient les filtres
+    this.recolor(true);
+  }
+
+  private recolor(legend: boolean) {
+    for (const n of this.data.nodes) {
+      const c = this.colors.get(n.group) ?? '#ffffff';
+      n.__mat?.color.set(c);
+      n.__halo?.color.set(c);
+    }
+    this.linkLayer?.setLinks(this.visibleLinks(), (l) => this.colors.get(l.group) ?? '#8888aa');
+    this.paint();
+    if (legend) this.renderLegend();
   }
 }
 
@@ -776,6 +834,8 @@ export default class GalaxiePlugin extends Plugin {
   async loadSettings() {
     const saved = ((await this.loadData()) ?? {}) as Partial<GalaxieSettings>;
     this.settings = { ...DEFAULTS, ...saved };
+    const raw = saved.groupColors && typeof saved.groupColors === 'object' ? saved.groupColors : {};
+    this.settings.groupColors = Object.fromEntries(Object.entries(raw).filter(([, c]) => typeof c === 'string' && HEX.test(c)));
     FR = pickLang(this.settings.language);
     T = FR ? TFR : TEN;
     if ((saved.version ?? 1) < 3) {            // v3 : halo doux par défaut
@@ -785,6 +845,26 @@ export default class GalaxiePlugin extends Plugin {
     }
   }
   async saveSettings() { await this.saveData(this.settings); }
+
+  /** Couleurs actuelles de tous les dossiers du vault (choisies ou par défaut). */
+  currentColors(): Map<string, string> {
+    return colorMap(vaultGroups(this.app), this.settings.groupColors);
+  }
+
+  /** Enregistre la couleur d'un dossier (null = revenir à la couleur par défaut) et repeint les vues. */
+  async setGroupColor(group: string, color: string | null) {
+    const chosen = { ...this.settings.groupColors };
+    if (color && HEX.test(color)) chosen[group] = color.toLowerCase(); else delete chosen[group];
+    this.settings.groupColors = chosen;
+    await this.saveSettings();
+    for (const v of this.views()) v.applyColors();
+  }
+
+  async resetColors() {
+    this.settings.groupColors = {};
+    await this.saveSettings();
+    for (const v of this.views()) v.applyColors();
+  }
 }
 
 class GalaxieSettingTab extends PluginSettingTab {
@@ -799,7 +879,47 @@ class GalaxieSettingTab extends PluginSettingTab {
       { name: T.orphans, control: { type: 'toggle', key: 'showOrphans' } },
       { name: T.particles, desc: T.particlesDesc, control: { type: 'toggle', key: 'particles' } },
       { name: T.labels, desc: T.labelsDesc, control: { type: 'slider', key: 'hubLabels', min: 0, max: 60, step: 1 } },
+      {
+        type: 'group', heading: T.colors,
+        items: [
+          { name: '', desc: T.colorsDesc, searchable: false, render: () => {} },
+          ...[...this.plugin.currentColors().keys()].map(group => ({
+            name: this.groupLabel(group),
+            aliases: ['color', 'couleur'],
+            render: (setting: Setting) => { this.colorRow(setting, group); },
+          })),
+          { name: T.resetAll, desc: T.resetAllDesc, action: () => { void this.plugin.resetColors().then(() => this.rerender()); } },
+        ],
+      },
     ];
+  }
+
+  private groupLabel(group: string) {
+    return group === '/' ? T.root : group === '#tags' ? 'Tags' : group;
+  }
+
+  /** Une ligne « dossier » : sélecteur de couleur + bouton de retour à la couleur par défaut. */
+  private colorRow(setting: Setting, group: string) {
+    const chosen = this.plugin.settings.groupColors[group];
+    setting.addColorPicker(cp => cp
+      .setValue(this.plugin.currentColors().get(group) ?? '#ffffff')
+      .onChange(async v => { await this.plugin.setGroupColor(group, v); this.refreshReset(setting, group); }));
+    setting.addExtraButton(b => b.setIcon('rotate-ccw').setTooltip(T.resetColor).setDisabled(!chosen)
+      .onClick(async () => {
+        await this.plugin.setGroupColor(group, null);
+        this.rerender();
+      }));
+  }
+
+  /** Obsidian 1.13+ : update() re-rend les définitions ; versions plus anciennes : display(). */
+  private rerender() {
+    const tab = this as unknown as { update?: () => void };
+    if (typeof tab.update === 'function') tab.update(); else this.display();
+  }
+
+  private refreshReset(setting: Setting, group: string) {
+    const btn = setting.controlEl.querySelector('.extra-setting-button');
+    btn?.toggleClass('is-disabled', !this.plugin.settings.groupColors[group]);
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
@@ -834,5 +954,10 @@ class GalaxieSettingTab extends PluginSettingTab {
       .addToggle(t => t.setValue(s.particles).onChange(async v => { s.particles = v; await save(); }));
     new Setting(containerEl).setName(T.labels).setDesc(T.labelsDesc)
       .addSlider(sl => sl.setLimits(0, 60, 1).setValue(s.hubLabels).onChange(async v => { s.hubLabels = v; await save(true); }));
+
+    new Setting(containerEl).setName(T.colors).setDesc(T.colorsDesc).setHeading();
+    for (const group of this.plugin.currentColors().keys()) this.colorRow(new Setting(containerEl).setName(this.groupLabel(group)), group);
+    new Setting(containerEl).setName(T.resetAll).setDesc(T.resetAllDesc)
+      .addButton(b => b.setButtonText(T.reset).onClick(async () => { await this.plugin.resetColors(); this.display(); }));
   }
 }

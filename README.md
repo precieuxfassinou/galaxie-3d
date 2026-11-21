@@ -4,7 +4,7 @@ A colorful 3D view of your Obsidian vault.
 
 ![Galaxie 3D in a demo vault](docs/screenshot.png)
 
-- **One color per top-level folder**, so the shape of your vault reads at a glance.
+- **One color per top-level folder**, so the shape of your vault reads at a glance. **Pick your own colors**: click a folder's dot in the legend, or use the *Folder colors* section of the settings (each color can be reset to the default).
 - Node size grows with the number of links; the most linked notes keep their name visible.
 - Soft glow, fixed-size starfield, particles flowing along the links of the selected note.
 - Search box, click to focus a note and its neighbors, double-click (or Ctrl+click) to open it.
@@ -24,7 +24,7 @@ Run the command **Open 3D galaxy** or click the orbit icon in the ribbon. The vi
 | Drag | Rotate |
 | Wheel | Zoom |
 
-Settings: glow intensity, tags, orphan notes, particles, number of always-visible names.
+Settings: glow intensity, tags, orphan notes, particles, number of always-visible names, folder colors.
 
 ## Privacy
 
@@ -43,4 +43,4 @@ Built on [3d-force-graph](https://github.com/vasturiano/3d-force-graph) and [thr
 
 ## Français
 
-Vue 3D colorée du vault : une couleur par dossier principal, halo doux, fond étoilé, recherche, mise en valeur des voisins. Commande **Ouvrir la galaxie 3D**. Clic : centrer · double-clic ou Ctrl+clic : ouvrir · glisser : tourner · molette : zoom. Aucune requête réseau, aucune télémétrie.
+Vue 3D colorée du vault : une couleur par dossier principal, halo doux, fond étoilé, recherche, mise en valeur des voisins. Couleurs personnalisables : clic sur la pastille d'un dossier dans la légende, ou section *Couleurs des dossiers* des réglages. Commande **Ouvrir la galaxie 3D**. Clic : centrer · double-clic ou Ctrl+clic : ouvrir · glisser : tourner · molette : zoom. Aucune requête réseau, aucune télémétrie.

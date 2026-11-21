@@ -1,7 +1,7 @@
 {
   "id": "galaxie",
   "name": "Galaxie 3D",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "minAppVersion": "1.7.2",
   "description": "A colorful 3D view of your vault: one color per top-level folder, soft glow, starfield, search and neighbor highlighting.",
   "author": "precieuxfassinou",
