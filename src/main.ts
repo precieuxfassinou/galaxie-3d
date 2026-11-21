@@ -4,6 +4,7 @@ import type * as Three from 'three';
 import type { UnrealBloomPass as BloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type SpriteTextType from 'three-spritetext';
 import { makeSky } from './sky';
+import { bakeNebula, type Nebula } from './nebula';
 
 /* The 3D engine (three.js, 3d-force-graph: about 1.4 MB) is loaded only when a Galaxie view is shown,
    after Obsidian has finished starting. Until then, none of it is evaluated. */
@@ -263,6 +264,7 @@ class GalaxieView extends ItemView {
   private signature = '';
   private colors = new Map<string, string>();
   private sky?: Three.Group;
+  private nebula?: Nebula;
   private neighbors = new Map<string, Set<string>>();
   private hovered: GNode | null = null;
   private selected: GNode | null = null;
@@ -331,9 +333,9 @@ class GalaxieView extends ItemView {
     (g.d3Force('link') as unknown as { distance?(f: (l: GLink) => number): void } | undefined)?.distance?.((l: GLink) => (l.group === '#tags' ? 18 : 80));
 
     // Fond opaque (sinon le thème d'Obsidian transparaît) + étoiles
-    g.scene().background = new THREE.Color('#05060d');
-    this.sky = makeSky(THREE, 3200, 2200, this.plugin.settings.nebulae);
+    this.sky = makeSky(THREE, 3200, 2200);
     g.scene().add(this.sky);
+    this.applyNebula();
     this.linkLayer = new LinkLayer(g.scene(), (end) => (typeof end === 'string' ? this.byId.get(end) : end));
     // Résolution plafonnée : sur un écran haute densité, le rendu coûtait 2 à 4 fois plus cher
     const ratio = Math.min(window.devicePixelRatio || 1, 1.25);
@@ -394,6 +396,8 @@ class GalaxieView extends ItemView {
     // Une erreur ici interromprait la désactivation du plugin et bloquerait son rechargement
     try { this.graph?._destructor(); } catch (e) { console.warn('Galaxie 3D: graph cleanup failed', e); }
     this.graph = undefined;
+    this.nebula?.dispose();
+    this.nebula = undefined;
     this.contentEl.empty();
   }
 
@@ -689,13 +693,27 @@ class GalaxieView extends ItemView {
     if (this.bloom) this.bloom.strength = this.plugin.settings.bloom;
   }
 
-  /** Recrée le ciel de fond (après un changement du réglage des nébuleuses). */
+  /** Applique le réglage des nébuleuses (fond calculé une fois, ou fond uni). */
   applySky() {
+    if (this.graph) this.applyNebula();
+  }
+
+  private applyNebula() {
     const g = this.graph;
-    if (!g || !this.sky) return;
-    g.scene().remove(this.sky);
-    this.sky = makeSky(THREE, 3200, 2200, this.plugin.settings.nebulae);
-    g.scene().add(this.sky);
+    if (!g) return;
+    this.nebula?.dispose();
+    this.nebula = undefined;
+    // Fond opaque (sinon le thème d'Obsidian transparaît)
+    g.scene().background = new THREE.Color('#05060d');
+    if (!this.plugin.settings.nebulae) return;
+    // Le fond uni reste affiché le temps du calcul, puis les nébuleuses apparaissent
+    const nebula = bakeNebula(THREE, g.renderer(), 1024);
+    this.nebula = nebula;
+    nebula.ready.then(() => {
+      if (this.nebula === nebula && this.graph) this.graph.scene().background = nebula.texture;
+    }).catch((e: unknown) => {
+      if (this.nebula === nebula) console.warn('Galaxie 3D: nebula background unavailable', e);
+    });
   }
 
   /** Aperçu pendant que l'utilisateur fait glisser le sélecteur : rien n'est encore enregistré. */

@@ -1,12 +1,11 @@
 /*
  * Ciel de fond de la galaxie : des étoiles de tailles et de luminosités variées (beaucoup de petites étoiles
- * pâles, quelques grosses très brillantes), une bande plus dense façon Voie lactée, et de légères nébuleuses
- * colorées. Tout est dessiné en quelques objets seulement (4 nuages de points + une poignée de sprites),
- * pour rester léger même sur une petite machine.
+ * pâles, quelques grosses très brillantes) et une bande plus dense façon Voie lactée. Tout tient en 4 nuages
+ * de points, pour rester léger même sur une petite machine. Les nébuleuses sont dans nebula.ts.
  */
 import type * as Three from 'three';
 
-type ThreeLib = Pick<typeof Three, 'AdditiveBlending' | 'BufferAttribute' | 'BufferGeometry' | 'CanvasTexture' | 'Color' | 'Group' | 'Points' | 'PointsMaterial' | 'Sprite' | 'SpriteMaterial'>;
+type ThreeLib = Pick<typeof Three, 'AdditiveBlending' | 'BufferAttribute' | 'BufferGeometry' | 'CanvasTexture' | 'Color' | 'Group' | 'NormalBlending' | 'Points' | 'PointsMaterial'>;
 
 /** Générateur pseudo-aléatoire déterministe : le ciel reste le même d'une ouverture à l'autre. */
 export function rng(seed: number) {
@@ -31,8 +30,6 @@ export const STAR_TIERS = [
 /** Couleurs réelles des étoiles : bleu-blanc (chaudes), blanc, jaune, orange (froides). */
 const STAR_TINTS = ['#ffffff', '#ffffff', '#cfe0ff', '#a9c7ff', '#fff4e0', '#ffd6a5', '#ffb38a'];
 
-const NEBULA_TINTS = ['#6a3df0', '#c43dd6', '#2f6bff', '#ff4f9a', '#22b5c9'];
-
 function softTexture(lib: ThreeLib, inner = 1): Three.CanvasTexture {
   const size = 64;
   const c = createEl('canvas');
@@ -44,33 +41,6 @@ function softTexture(lib: ThreeLib, inner = 1): Three.CanvasTexture {
   g.addColorStop(0.45, 'rgba(255,255,255,0.18)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  return new lib.CanvasTexture(c);
-}
-
-/** Texture de nébuleuse : quelques nuages flous superposés, irréguliers. */
-function nebulaTexture(lib: ThreeLib, rand: () => number): Three.CanvasTexture {
-  const size = 256;
-  const c = createEl('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d')!;
-  for (let i = 0; i < 14; i++) {
-    const x = size * (0.25 + rand() * 0.5), y = size * (0.25 + rand() * 0.5);
-    const r = size * (0.12 + rand() * 0.3);
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    const a = 0.1 + rand() * 0.2;
-    g.addColorStop(0, `rgba(255,255,255,${a})`);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-  // Masque rond qui efface les bords : aucune trace du carré de la texture
-  ctx.globalCompositeOperation = 'destination-in';
-  const mask = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  mask.addColorStop(0, 'rgba(0,0,0,1)');
-  mask.addColorStop(0.55, 'rgba(0,0,0,0.6)');
-  mask.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = mask;
   ctx.fillRect(0, 0, size, size);
   return new lib.CanvasTexture(c);
 }
@@ -93,7 +63,7 @@ export function starPosition(rand: () => number, radius: number): [number, numbe
   return [x, y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
 }
 
-export function makeSky(lib: ThreeLib, count: number, radius: number, nebulae = true): Three.Group {
+export function makeSky(lib: ThreeLib, count: number, radius: number): Three.Group {
   const rand = rng(20261121);
   const sky = new lib.Group();
   const tint = new lib.Color();
@@ -117,7 +87,7 @@ export function makeSky(lib: ThreeLib, count: number, radius: number, nebulae = 
       size: tier.size, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false,
       opacity: tier.glow ? 1 : 0.85,
       map: tier.glow ? glowTex : null,
-      blending: tier.glow ? lib.AdditiveBlending : undefined,
+      blending: tier.glow ? lib.AdditiveBlending : lib.NormalBlending,
     });
     const pts = new lib.Points(geo, mat);
     pts.raycast = () => {};
@@ -125,20 +95,5 @@ export function makeSky(lib: ThreeLib, count: number, radius: number, nebulae = 
     sky.add(pts);
   }
 
-  if (nebulae) {
-    for (let i = 0; i < 7; i++) {
-      const mat = new lib.SpriteMaterial({
-        map: nebulaTexture(lib, rand), color: NEBULA_TINTS[i % NEBULA_TINTS.length],
-        transparent: true, opacity: 0.16 + rand() * 0.14, depthWrite: false, blending: lib.AdditiveBlending,
-      });
-      const s = new lib.Sprite(mat);
-      s.raycast = () => {};
-      const [x, y, z] = starPosition(rand, radius * 0.95);
-      s.position.set(x, y, z);
-      s.scale.setScalar(radius * (0.45 + rand() * 0.45));
-      s.renderOrder = -20;
-      sky.add(s);
-    }
-  }
   return sky;
 }
